@@ -1,0 +1,6 @@
+#ifndef PASS_ONE_ASSEMBLER_PASS_TWO_H
+#define PASS_ONE_ASSEMBLER_PASS_TWO_H
+
+void print();
+
+#endif //PASS_ONE_ASSEMBLER_PASS_TWO_H
