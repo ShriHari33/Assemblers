@@ -28,7 +28,7 @@ public:
         hash_table.resize(101);
     }
 
-    map(int size)
+    explicit map(int size)
     {
         hash_table.resize(size);
     }
