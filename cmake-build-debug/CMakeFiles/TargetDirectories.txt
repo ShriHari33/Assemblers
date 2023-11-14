@@ -1,4 +1,0 @@
-/home/float33/University/5th/System_software/pass_one_assembler/cmake-build-debug/CMakeFiles/assembler.dir
-/home/float33/University/5th/System_software/pass_one_assembler/cmake-build-debug/CMakeFiles/pass_two.dir
-/home/float33/University/5th/System_software/pass_one_assembler/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/float33/University/5th/System_software/pass_one_assembler/cmake-build-debug/CMakeFiles/rebuild_cache.dir
