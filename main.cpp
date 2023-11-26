@@ -87,18 +87,30 @@ public:
 
 void fill_op_tab(map& op_tab)
 {
-    op_tab.insert({"STL", 0x0});
-    op_tab.insert({"JSUB", 0x1});
-    op_tab.insert({"LDA", 0x2});
-    op_tab.insert({"COMP", 0x3});
-    op_tab.insert({"JEQ", 0x4});
-    op_tab.insert({"J", 0x5});
-    op_tab.insert({"STA", 0x6});
-    op_tab.insert({"LDL", 0x7});
+    op_tab.insert({"ADD", 0x18});
+    op_tab.insert({"AND", 0x40});
+    op_tab.insert({"COMP", 0x28});
+    op_tab.insert({"DIV", 0x24});
+    op_tab.insert({"J", 0x3C});
+    op_tab.insert({"JEQ", 0x30});
+    op_tab.insert({"JGT", 0x34});
+    op_tab.insert({"JLT", 0x38});
+    op_tab.insert({"JSUB", 0x48});
+    op_tab.insert({"LDA", 0x00});
+    op_tab.insert({"LDCH", 0x50});
+    op_tab.insert({"LDL", 0x08});
+    op_tab.insert({"LDX", 0x04});
+    op_tab.insert({"MUL", 0x20});
+    op_tab.insert({"OR", 0x44});
     op_tab.insert({"RSUB", 0x4C});
-    op_tab.insert({"END", 0x9});
-    op_tab.insert({"JSUB", 0xa});
-    op_tab.insert({"ADD", 0xb});
+    op_tab.insert({"STA", 0x0c});
+    op_tab.insert({"STCH", 0x54});
+    op_tab.insert({"STL", 0x14});
+    op_tab.insert({"STSW", 0xe8});
+    op_tab.insert({"STX", 0x10});
+    op_tab.insert({"SUB", 0x1c});
+
+
 
 }
 
@@ -180,9 +192,9 @@ int main()
         if(iss >> opcode >> operand)
         {
             bool valid_opcode = op_tab.find(opcode);
+
             if (valid_opcode)
                 add_to_loc = 3;
-
             else if (opcode == "START")
             {
                 prog_name = label;
@@ -223,8 +235,8 @@ int main()
             }
             else
             {
-                std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
-                intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
+                std::cout << "// Invalid opcode: " << opcode << '\n';
+                intermediate_file << "// Invalid opcode: " << opcode << '\n';
 
                 add_to_loc = 0;
                 continue;
@@ -236,44 +248,54 @@ int main()
                 sym_tab.insert(key_val_pair(label, LOC_CTR));
             else
             {
-                std::cout << "ERROR, duplicate label: " << label << " found\n";
-                intermediate_file << "ERROR, duplicate label: " << label << " found\n";
+                std::cout << "// Duplicate label: " << label << '\n';
+                intermediate_file << "// Duplicate label: " << label << '\n';
                 add_to_loc = 0;
                 continue;
             }
 
-            std::cout << std::hex << LOC_CTR << '\t' << label << '\t' << opcode
-                      << '\t' << operand << std::endl;
-            intermediate_file << std::hex << LOC_CTR << '\t' << label << '\t' << opcode
-                        << '\t' << operand << std::endl;
+            if(opcode != "START")
+            {
+                std::cout << std::hex << LOC_CTR << '\t' << label << '\t' << opcode
+                          << '\t' << operand << std::endl;
+                intermediate_file << std::hex << LOC_CTR << '\t' << label << '\t' << opcode
+                                  << '\t' << operand << std::endl;
+            }
         }
         else if(opcode.empty() && operand.empty() && label.empty())
             continue;
         else if(opcode.empty() && operand.empty())
         {
-            // only such instruction in SIC is "RSUB"
+            /*
+             * only such instruction in SIC is "RSUB". But we also enter this conditional if we had "END" parsed in
+             * this line. So we need to take care of both.
+            */
 
             opcode = label;
+            /*
+             * for faster checks, I don't do `if(op_tab.find(opcode))` because as said above, the ONLY instruction that
+             * SIC provides in this case is "RUSB".
+            */
 
-            if(op_tab.find(opcode))
+            if(opcode == "RSUB")
             {
                 std::cout << std::hex << LOC_CTR << '\t' << '\t' << opcode << std::endl;
                 intermediate_file << std::hex << LOC_CTR << '\t' << '\t' << opcode << std::endl;
 
-                // I only read our file until I find the "END". I don't care what happens next, I just stop.
-                if(opcode == "END")
-                {
-                    add_to_loc = 1;
-                    LOC_CTR += 1;
-                    break;
-                }
-                else
-                    add_to_loc = 3;
+                add_to_loc = 3;
             }
+            // I only read our file until I find the "END". I don't care what happens next, I just stop.
+            else if(opcode == "END")
+            {
+                add_to_loc = 1;
+                LOC_CTR += add_to_loc;
+                break;
+            }
+            // if it was not
             else
             {
-                std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
-                intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
+                std::cout << "// Invalid opcode: " << opcode << '\n';
+                intermediate_file << "// ERROR, invalid opcode: " << opcode << '\n';
 
                 add_to_loc = 0;
             }
@@ -304,8 +326,8 @@ int main()
             }
             else
             {
-                std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
-                intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
+                std::cout << "// Invalid opcode: " << opcode << " found\n";
+                intermediate_file << "// Invalid opcode: " << opcode << " found\n";
 
                 add_to_loc = 0;
                 // continue;
@@ -323,8 +345,7 @@ int main()
 
     LOC_CTR -= 1;
     input_file.close();
-    
-    sym_tab.print();
+
     std::cout << "\n\n";
 
     /*
@@ -667,7 +688,104 @@ int main()
 
             } // end opcode == "WORD"
             else if(opcode == "RESW" || opcode == "RESB")
+            {
+                /*
+                 * This is an interesting bit. For records until now that have been pushed into the 'put_next' object,
+                 * we will have to flush it to the object file because we don't want to write anything in this memory;
+                 * as it is `reserved` for variables.
+                 *
+                 * As of my understanding now, this is done because we want to deliberately skip such records because
+                 * we want to NOT WRITE anything to this space, so the loader just starts writing from where-ever it
+                 * was instructed, and as this space was not written to, BUT was reserved, this space is reserved for
+                 * variables!
+                 *
+                 * So, we write the current record, and re-initialize
+                */
+
+                /*
+                 * This below situation can arise when we have something like:
+                 * NAME START   1000
+                 * STR  RESW    10
+                 * STR2 RESW    2
+                 *
+                 * Now, during the encounter with "STR", the code just needs to skip, even though we encountered a
+                 * "RESW", there are no records that need to be written.
+                 * So, if space_taken is 0, we just need to find the first instruction, so we continue.
+                 *
+                 * If it is NOT zero, then we flush the previous input, and then re-initialize and move on.
+                 */
+
+                if(space_taken == 0)
+                    continue;
+
+                std::ostringstream sp;
+                sp << std::hex << space_taken;
+                std::string space_taken_string = sp.str();
+
+                while(space_taken_string.length() < 2)
+                    space_taken_string = '0' + space_taken_string;
+
+                text_record.append(space_taken_string);
+                text_record.append(put_next);
+
+                std::cout << text_record << std::endl;
+                obj_file << text_record << std::endl;
+
+                text_record.clear();
+                put_next.clear();
+
+                /*
+                 * We make the below as 'false' as usual, as in previous such scenarios of having "full" the current
+                 * text record, we would have flushed and gone below to the `!found_first` block, initialised the
+                 * current instruction and move on.
+                 *
+                 * BUT, we don't want to initialise with this, as this is not an instruction, but rather directives.
+                 *
+                 * So, we set the `found_first` flag to false, implying to allow the next instruction to use it
+                 * BY COMBINING it with the continue keyword.
+                */
+
+                space_taken = 0;
+                found_first = false;
                 continue;
+            }
+            else if(loc == "//")
+            {
+                /*
+                 * If entered this scope, you have encountered an "ERROR". Either due to an invalid opcode, or due to
+                 * a duplicate label. What do we do in such a situation?
+                 *
+                 * I have no idea as of now, but for now, I will just add a size of 3, and write "error" to indicate
+                 * an error.
+                 */
+
+                if(space_taken + 3 <= 30)
+                    put_next += "_ERROR", space_taken += 3;
+                else
+                {
+                    // write the current record, and re-initialize
+                    std::ostringstream sp;
+                    sp << std::hex << space_taken;
+                    std::string space_taken_string = sp.str();
+
+                    while(space_taken_string.length() < 2)
+                        space_taken_string = '0' + space_taken_string;
+
+                    text_record.append(space_taken_string);
+                    text_record.append(put_next);
+
+                    std::cout << text_record << std::endl;
+                    obj_file << text_record << std::endl;
+
+                    text_record.clear();
+                    put_next.clear();
+
+                    put_next = "_ERROR";
+                    space_taken = 3;
+                    found_first = false;
+                    continue;
+                }
+            }
         }
         else if(operand.empty() && opcode.empty())
         {
@@ -744,7 +862,12 @@ int main()
             operand = opcode;
             opcode = label;
 
-            // No need to find again if the opcode is valid or not. I'm lazy, and hey it works
+            /*
+             * No need to find again if the opcode is valid or not. I'm lazy, and hey it works.
+             *
+             * Nvm, I still did find it.
+            */
+
 
             int OPC_CODE = op_tab.get_code(opcode);
             int LABEL_ADDR = sym_tab.get_code(operand);
@@ -834,7 +957,9 @@ int main()
 
         if(!found_first)
         {
-            loc = "00" + loc;
+            while(loc.length() < 6)
+                loc = '0' + loc;
+
             text_record.append("T_" + loc + '_');
             // obj_file << loc << '_' << 30 << '_';
             found_first = true;
@@ -860,25 +985,10 @@ int main()
 
     obj_file.close();
 
-    /*
 
-    intermediate_file << "\n\nLength of Program is " << std::dec
-                << (LOC_CTR - START_ADDR) << " bytes in decimal system\n";
-    std::cout << "\n\nLength of Program is " << std::dec << LOC_CTR - START_ADDR
-              << " bytes in decimal system\n";
-
-    intermediate_file << "\n\nLength of Program is " << std::hex << LOC_CTR - START_ADDR
-                << " bytes in hex system\n";
     std::cout << "\n\nLength of Program is " << std::hex << LOC_CTR - START_ADDR
-              << " bytes in hex system\n";
+              << " bytes (base 16)\n";
 
-    std::cout << "\nSYMBOL TAB\n\n";
-    sym_tab.print();
-
-    std::cout << "\nOPCODE TAB\n\n";
-    op_tab.print();
-
-    */
     intermediate_file.close();
 
     return 0;
