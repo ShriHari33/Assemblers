@@ -95,9 +95,19 @@ void fill_op_tab(map& op_tab)
     op_tab.insert({"J", 0x5});
     op_tab.insert({"STA", 0x6});
     op_tab.insert({"LDL", 0x7});
-    op_tab.insert({"RSUB", 0x8});
+    op_tab.insert({"RSUB", 0x4C});
     op_tab.insert({"END", 0x9});
     op_tab.insert({"JSUB", 0xa});
+    op_tab.insert({"ADD", 0xb});
+
+}
+
+bool isDirective(std::string str)
+{
+    if(str == "RESB" || str == "RESW")
+        return true;
+
+    return false;
 }
 
 std::string prog_name{};
@@ -161,11 +171,13 @@ int main()
 
     while (std::getline(input_file, line))
     {
+        label.clear(), opcode.clear(), operand.clear();
         std::istringstream iss(line);
 
         iss >> label;
 
-        if (iss >> opcode >> operand)
+        // if there are  "LABEL, OPCODE, OPERAND", only then we go into this 'if'
+        if(iss >> opcode >> operand)
         {
             bool valid_opcode = op_tab.find(opcode);
             if (valid_opcode)
@@ -235,37 +247,68 @@ int main()
             intermediate_file << std::hex << LOC_CTR << '\t' << label << '\t' << opcode
                         << '\t' << operand << std::endl;
         }
-        else
+        else if(opcode.empty() && operand.empty() && label.empty())
+            continue;
+        else if(opcode.empty() && operand.empty())
         {
-            if (label == "END")
+            // only such instruction in SIC is "RSUB"
+
+            opcode = label;
+
+            if(op_tab.find(opcode))
             {
-                add_to_loc = 1;
-                std::cout << std::hex << LOC_CTR << '\t' << '\t' << label << '\t'
-                          << '\t' << std::endl;
-                intermediate_file << std::hex << LOC_CTR << '\t' << '\t' << label << '\t'
-                            << '\t' << std::endl;
+                std::cout << std::hex << LOC_CTR << '\t' << '\t' << opcode << std::endl;
+                intermediate_file << std::hex << LOC_CTR << '\t' << '\t' << opcode << std::endl;
+
+                // I only read our file until I find the "END". I don't care what happens next, I just stop.
+                if(opcode == "END")
+                {
+                    add_to_loc = 1;
+                    LOC_CTR += 1;
+                    break;
+                }
+                else
+                    add_to_loc = 3;
             }
             else
             {
-                operand = opcode;
-                opcode = label;
+                std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
+                intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
 
-                bool valid_op_code = op_tab.find(opcode);
-                if (valid_op_code)
-                    add_to_loc = 3;
-                else
-                {
-                    std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
-                    intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
+                add_to_loc = 0;
+            }
+        }
+        // we only have "OPCODE, OPERAND" present (ex: LDA ZERO)
+        else if(operand.empty())
+        {
+            /*
+             * There is also a weird possibility of having an instruction of the kind "LEX RSUB", which is technically
+             * okay to use, but if you actually use it, I think you are not functioning properly. Because who the hell
+             * would use a label for an RSUB?
+             *
+             * So, I have not included bug fixing for this issue as of now.
+            */
 
-                    add_to_loc = 0;
-                    continue;
-                }
+            operand = opcode;
+            opcode = label;
+
+            bool valid_op_code = op_tab.find(opcode);
+            if (valid_op_code)
+            {
+                add_to_loc = 3;
 
                 std::cout << std::hex << LOC_CTR << '\t' << '\t' << opcode << '\t'
                           << operand << std::endl;
                 intermediate_file << std::hex << LOC_CTR << '\t' << '\t' << opcode << '\t'
-                            << operand << std::endl;
+                                  << operand << std::endl;
+            }
+            else
+            {
+                std::cout << "ERROR, invalid opcode: " << opcode << " found\n";
+                intermediate_file << "ERROR, invalid opcode: " << opcode << " found\n";
+
+                add_to_loc = 0;
+                // continue;
             }
         }
 
@@ -275,14 +318,17 @@ int main()
     /* check below later, as I needed to do this ONLY because I added 1 to the "END" label occurrence. I think we can
      * safely neglect that?
      * 
-     * closing the input file, as it is not required for the 2nd pass.
+     * closing the input file below, as it is not required for the 2nd pass.
     */
+
     LOC_CTR -= 1;
     input_file.close();
     
     sym_tab.print();
     std::cout << "\n\n";
-    /* close the intermediate file to which we were writing to, and then re-open it in read mode.
+
+    /*
+     * close the intermediate file to which we were writing to, and then re-open it in read mode.
      * 
      * open a new file to store the object program.
     */
@@ -359,19 +405,28 @@ int main()
     std::string loc;
     std::string put_next{};
     std::string text_record{};
-    text_record.append("T_");
-
 
     bool found_first = false;
     size_t space_taken = 0;
     line.clear();
-    std::getline(intermediate_file, line);
+
+    /*
+     * this flag is to allow for not initialising the text record with the START and END records
+     *
+     * For now, I have just said "to continue" if such a record is found, but i think adding a variable to keep
+     * track is much better for code maintenance, so might add it up later!
+    */
+
+    bool ignore;
 
     bool loop_check;
     while(std::getline(intermediate_file, line))
     {
+        // ignore = false;
         loop_check = false;
         std::istringstream iss(line);
+
+        opcode.clear(), operand.clear(), label.clear(), loc.clear();
 
         if(iss >> loc >> label >> opcode >> operand)
         {
@@ -392,7 +447,7 @@ int main()
 
                 if(LABEL_ADDR == INT_MIN)
                 {
-                    std::cout << "couldn't find the LABEL_ADDR for" + operand;
+                    std::cout << "couldn't find the LABEL_ADDRess for" + operand;
                     exit(0);
                 }
 
@@ -414,18 +469,7 @@ int main()
                 okk.str("");
                 okk.clear();
 
-//                std::istringstream tt(hexStr); // Create string stream with hex string
-//                std::string a;
-//
-//                tt >> std::hex >> a; // Read from the stringstream as hex and store in 'a'
-
-//
-//                std::istringstream tt(std::to_string(LABEL_ADDR));
-//                std::string a;
-//
-//                tt >> std::hex >> a;
-//                std::cout << "found " << opcode_string << '\n';
-
+                // make the above stuff of length 6
                 while(opcode_string.length() < 2)
                     opcode_string = '0' + opcode_string;
 
@@ -434,20 +478,40 @@ int main()
 
                 // need to handle care of the 'x' bit for indexing mode later
 
-                put_next += '_' + (opcode_string + label_string);
-                // std::cout << opcode_string << ' ' << label_string << ' ' << put_next << '\n';
-                space_taken += 3;
+                /*
+                 * handle the text record's length by making sure that THE CURRENT instruction can fit in the CURRENT
+                 * text record.
+                 *      If it can, go ahead and fill it in the CURRENT record.
+                 *      Else, write the current record to the file, then re-initialize a new text record.
+                */
 
-                if(space_taken > 30)
-                {
-
-                }
-                else if(space_taken == 30)
-                {
-
-                }
+                if(space_taken + 3 <= 30)
+                    put_next += '_' + (opcode_string + label_string), space_taken += 3;
                 else
-                    continue;
+                {
+                    // write the current record, and re-initialize
+                    std::ostringstream sp;
+                    sp << std::hex << space_taken;
+                    std::string space_taken_string = sp.str();
+
+                    while(space_taken_string.length() < 2)
+                        space_taken_string = '0' + space_taken_string;
+
+                    text_record.append(space_taken_string);
+                    text_record.append(put_next);
+
+                    std::cout << text_record << std::endl;
+                    obj_file << text_record << std::endl;
+
+                    text_record.clear();
+                    put_next.clear();
+
+                    put_next = '_' + (opcode_string + label_string);
+                    space_taken = 3;
+                    found_first = false;
+                }
+
+                // std::cout << opcode_string << ' ' << label_string << ' ' << put_next << '\n';
             }
             else if (opcode == "BYTE")
             {
@@ -461,62 +525,104 @@ int main()
                     int i = 2;
                     do
                     {
-                        token = token + std::to_string(static_cast<int>(operand[i]));
+                        token += std::to_string(static_cast<int>(operand[i]));
                         i++;
                     } while (operand[i] != '\'');
 
                     // using a temp string token for much better readability, to allow checks later when space_taken
                     // checks are made
 
-                    put_next += '_' + token;
-                    space_taken += operand.length() - 3; // remove 3 count because 'C' and the single quotes (' ')
+                    // "operand.length() - 3" because we need to neglect the C, ' and '
 
-                    if(space_taken > 30)
-                    {
-
-                    }
-                    else if(space_taken == 30)
-                    {
-
-                    }
+                    if( (space_taken + operand.length() - 3) <= 30)
+                        put_next += '_' + token, space_taken += (operand.length() - 3);
                     else
-                        continue;
+                    {
+                        // write the current record, and re-initialize
+                        std::ostringstream sp;
+                        sp << std::hex << space_taken;
+                        std::string space_taken_string = sp.str();
+
+                        while(space_taken_string.length() < 2)
+                            space_taken_string = '0' + space_taken_string;
+
+                        text_record.append(space_taken_string);
+                        text_record.append(put_next);
+
+                        std::cout << text_record << std::endl;
+                        obj_file << text_record << std::endl;
+
+                        text_record.clear();
+                        put_next.clear();
+
+                        put_next = '_' + token;
+                        space_taken = operand.length() - 3;
+                        found_first = false;
+                    }
                 }
                 else if (operand[0] == 'X')
                 {
-                    token.clear();
                     /* ex: 42069 VAL BYTE X'1b'
                      *
                      * Currently, this accepts hex consts only as a pair of numbers, i.e, the length is even.
                      * Not a big deal to change it to accept odd lengths too, so will change it later.
                     */
 
+                    /* reuse the string created "token" in the same scope, instead of a new one. MFW I don't want to
+                     * see clang-tidy warning lmao
+                    */
+
+                    token.clear();
+
                     // n -> NUMBER of chars to be collected, NOT the last index to be retreived
-                    token += operand.substr(2, operand.length() - 3);
+                    token = operand.substr(2, operand.length() - 3);
 
                     while(token.length() < 6)
                         token = '0' + token;
 
-                    space_taken += (operand.length() - 3) / 2;
-                    put_next += '_' + token;
+                    // length of the hex stuff in bytes is " ( operand.length() - 3 ) / 2 "
 
-                    if(space_taken > 30)
-                    {
-
-                    }
-                    else if(space_taken == 30)
-                    {
-
-                    }
+                    if( (space_taken + (operand.length() - 3) / 2) <= 30)
+                        put_next += '_' + token, space_taken += (operand.length() - 3);
                     else
-                        continue;
+                    {
+                        // write the current record, and re-initialize
+                        std::ostringstream sp;
+                        sp << std::hex << space_taken;
+                        std::string space_taken_string = sp.str();
+
+                        while(space_taken_string.length() < 2)
+                            space_taken_string = '0' + space_taken_string;
+
+                        text_record.append(space_taken_string);
+                        text_record.append(put_next);
+
+                        std::cout << text_record << std::endl;
+                        obj_file << text_record << std::endl;
+
+                        text_record.clear();
+                        put_next.clear();
+
+                        put_next = '_' + token;
+                        space_taken = (operand.length() - 3) / 2;
+                        found_first = false;
+                    }
                 }
             } // end opcode == "BYTE"
             else if (opcode == "WORD")
             {
-                std::string token{};
                 // ex: 1000 COUNTER WORD 256
+
                 //loop_check = true;
+
+                std::string token{};
+
+                /* Need to convert the operand into a hex value.
+                 *
+                 * So, I first take in that integer (present as a string in "operand" object), and then use the std::hex
+                 * manipulator on the ostringstream object to convert it to a hex string.
+                */
+
                 std::istringstream in(operand);
                 int val;
                 in >> val;
@@ -525,77 +631,232 @@ int main()
                 ou << std::hex << val;
                 token = ou.str();
 
+
+                // do we need to clean this? IDTS because scope dies, and new object is formed in the next iteration.
                 ou.str("");
                 ou.clear();
 
                 while(token.length() < 6)
-                    token += '0' + token;
+                    token = '0' + token;
 
-                put_next += '_' + token;
-                space_taken += 3;
-
-                if(space_taken > 30)
-                {
-
-                }
-                else if(space_taken == 30)
-                {
-
-                }
+                if(space_taken + 3 <= 30)
+                    put_next += '_' + token, space_taken += 3;
                 else
-                    continue;
+                {
+                    // write the current record, and re-initialize
+                    std::ostringstream sp;
+                    sp << std::hex << space_taken;
+                    std::string space_taken_string = sp.str();
+
+                    while(space_taken_string.length() < 2)
+                        space_taken_string = '0' + space_taken_string;
+
+                    text_record.append(space_taken_string);
+                    text_record.append(put_next);
+
+                    std::cout << text_record << std::endl;
+                    obj_file << text_record << std::endl;
+
+                    text_record.clear();
+                    put_next.clear();
+
+                    put_next = '_' + token;
+                    space_taken = 3;
+                    found_first = false;
+                }
 
             } // end opcode == "WORD"
-
-            // i think not needed below because we are adding at each iteration itself
-            // put_next += '_';
-
-            if(!found_first)
-            {
-                loc = "00" + loc;
-                text_record.append(loc + '_');
-                // obj_file << loc << '_' << 30 << '_';
-                found_first = true;
-            }
-
-            if(space_taken == 30)
-            {
-                text_record.append(std::to_string(space_taken) + '_');
-                text_record.append(put_next);
-                obj_file << text_record << std::endl;
-
-                put_next.clear();
-                space_taken = 0;
-                found_first = false;
-            }
+            else if(opcode == "RESW" || opcode == "RESB")
+                continue;
         }
         else if(operand.empty() && opcode.empty())
         {
+            /*
+             * The only such instruction that exists in SIC is RSUB. It does not take in any operands, just opcode.
+             *
+             * In this case, we read the 'location' into "loc" variable, and the 'RSUB' into the "label" variable
+             * because of how the code is structured.
+             *
+             * But, "END" can also enter this scope, and hence I check before if IT IS "END", and just continue
+             * looping back if it is.
+            */
 
+            // std::cout << "\nRSUB found!\n"; // debug statement
+            opcode = label;
+
+            if(opcode == "END")
+                continue;
+
+            int OPC_CODE = op_tab.get_code(opcode);
+            if(OPC_CODE == INT_MIN)
+            {
+                std::cerr << "couldn't find the OPC_CODE for" + opcode;
+                exit(0);
+            }
+
+            // convert OPC_CODE that we got to a string, first converting to hex
+            std::string opcode_string{};
+            std::ostringstream okk;
+            okk << std::hex << OPC_CODE;
+            opcode_string = okk.str();
+
+            okk.str("");
+            okk.clear();
+
+            while(opcode_string.length() < 2)
+                opcode_string = '0' + opcode_string;
+
+            if(space_taken + 3 <= 30)
+                put_next += '_' + (opcode_string + "0000"), space_taken += 3;
+            else
+            {
+                // write the current record, and re-initialize
+
+                std::ostringstream sp;
+                sp << std::hex << space_taken;
+                std::string space_taken_string = sp.str();
+
+                while(space_taken_string.length() < 2)
+                    space_taken_string = '0' + space_taken_string;
+
+                text_record.append(space_taken_string);
+                text_record.append(put_next);
+
+                std::cout << text_record << std::endl;
+                obj_file << text_record << std::endl;
+
+                text_record.clear();
+                put_next.clear();
+
+                put_next = '_' +(opcode_string + "0000");
+                space_taken = 3;
+                found_first = false;
+            }
         }
         else if(operand.empty())
         {
-            //                loc   label   opcode
-            // something like 1000   LDA    LENGTH (without any label)
+            /*
+             * ex:
+             *                loc   label   opcode
+             * something like 1000   LDA    LENGTH (without any label)
+            */
 
             operand = opcode;
             opcode = label;
 
-            if(op_tab.find(opcode))
-            {
-                if(sym_tab.find(operand))
-                {
+            // No need to find again if the opcode is valid or not. I'm lazy, and hey it works
 
-                }
+            int OPC_CODE = op_tab.get_code(opcode);
+            int LABEL_ADDR = sym_tab.get_code(operand);
+
+            if(OPC_CODE == INT_MIN)
+            {
+                std::cerr << "couldn't find the OPC_CODE for" + opcode;
+                exit(0);
             }
 
+            if(LABEL_ADDR == INT_MIN)
+            {
+                std::cerr << "couldn't find the LABEL_ADDR for " + operand << "\n" + opcode << "-" << loc;
+                exit(0);
+            }
+
+            // convert OPC_CODE that we got to a string, first converting to hex
+            std::string opcode_string{};
+            std::ostringstream okk;
+            okk << std::hex << OPC_CODE;
+            opcode_string = okk.str();
+
+            okk.str("");
+            okk.clear();
+
+            // convert the LABEL_ADDR that we got to a string, first converting to hex
+            std::string label_string{};
+
+            okk << std::hex << LABEL_ADDR; // Convert integer to hex string
+            label_string = okk.str();
+            okk.str("");
+            okk.clear();
+
+            // make the above stuff of length 6
+            while(opcode_string.length() < 2)
+                opcode_string = '0' + opcode_string;
+
+            while(label_string.length() < 4)
+                label_string = '0' + label_string;
+
+            // need to handle care of the 'x' bit for indexing mode later
+
+            /*
+             * handle the text record's length by making sure that THE CURRENT instruction can fit in the CURRENT
+             * text record.
+             *      If it can, go ahead and fill it in the CURRENT record.
+             *      Else, write the current record to the file, then re-initialize a new text record.
+            */
+
+            if(space_taken + 3 <= 30)
+                put_next += '_' + (opcode_string + label_string), space_taken += 3;
+            else
+            {
+                // write the current record, and re-initialize
+                std::ostringstream sp;
+                sp << std::hex << space_taken;
+                std::string space_taken_string = sp.str();
+
+                while(space_taken_string.length() < 2)
+                    space_taken_string = '0' + space_taken_string;
+
+                text_record.append(space_taken_string);
+                text_record.append(put_next);
+
+                std::cout << text_record << std::endl;
+                obj_file << text_record << std::endl;
+
+                text_record.clear();
+                put_next.clear();
+
+                put_next = '_' + (opcode_string + label_string);
+                space_taken = 3;
+                found_first = false;
+            }
         }
+        /*
+         * this works flawlessly, in the sense that we have all the four variables filled for "START".
+         * So we don't need to assign something else to opcode before checking. Does that make sense? I hope it does.
+        */
+        else if(opcode == "START")
+            continue;
 
+        /*
+         * This is VERY important. This is going to initialise the "T_{location}" part for a new Text-Record
+         * everytime we come out with "found_first" variable as "false"
+        */
 
-//        // obj_file << put_next << '_';
-//        text_record += put_next;
-//        put_next.clear();
+        if(!found_first)
+        {
+            loc = "00" + loc;
+            text_record.append("T_" + loc + '_');
+            // obj_file << loc << '_' << 30 << '_';
+            found_first = true;
+        }
     }
+
+    std::ostringstream sp;
+    sp << std::hex << space_taken;
+    std::string space_taken_string = sp.str();
+
+    while(space_taken_string.length() < 2)
+        space_taken_string = '0' + space_taken_string;
+
+    text_record.append(space_taken_string);
+    text_record.append(put_next);
+
+    sp.str("");
+    sp.clear();
+
+    std::cout << text_record << std::endl;
+    obj_file << text_record << std::endl;
+
 
     obj_file.close();
 
